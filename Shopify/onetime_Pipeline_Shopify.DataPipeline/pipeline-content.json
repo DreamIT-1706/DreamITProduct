@@ -1,0 +1,74 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "40af08a8-1fe9-ace5-4b71-a8a7769af7dc",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "input_config": {
+              "value": "{\n  \"stores\": {\n    \"company-uk.myshopify.com\": {\n      \"access_token\": \"shpat_9f1d5db70c2958\",\n      \"prefix\": \"_mvuk\",\n      \"sources\": {\n        \"customers\": {\n          \"active_flag\": true\n        },\n        \"orders\": {\n          \"active_flag\": true\n        },\n        \"products\": {\n          \"active_flag\": false\n        },\n        \"inventory\": {\n          \"active_flag\": false\n        }\n      }\n    },\n    \"comapany-eu.myshopify.com\": {\n      \"access_token\": \"shpat_z9y8xom6l5k4\",\n      \"prefix\": \"_mveu\",\n      \"sources\": {\n        \"customers\": {\n          \"active_flag\": false\n        },\n        \"orders\": {\n          \"active_flag\": false\n        },\n        \"inventory\": {\n          \"active_flag\": false\n        },\n        \"draft_orders\": {\n          \"active_flag\": false\n        }\n      }\n    }\n  }\n}",
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook1",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "3fdce747-21cf-b4f6-4e3c-11e668d96740",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook2",
+        "dependsOn": [
+          {
+            "activity": "Notebook1",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "b11159e6-a4a7-a98e-4a7e-92e22924a9f4",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook3",
+        "dependsOn": [
+          {
+            "activity": "Notebook2",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

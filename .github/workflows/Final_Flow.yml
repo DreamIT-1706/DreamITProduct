@@ -1,0 +1,359 @@
+name: Create Repository and Fabric Connection
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Source branch to copy from'
+        required: true
+        default: 'main'
+      new_repo_name:
+        description: 'Name for the new repository'
+        required: true
+        default: 'filtered-repo'
+      folders_to_keep:
+        description: 'Comma-separated list of folders to keep (e.g., BusinessCentral,Shopify)'
+        required: true
+        default: 'BusinessCentral,Shopify'
+      repo_visibility:
+        description: 'Repository visibility (public or private)'
+        required: true
+        default: 'private'
+        type: choice
+        options:
+          - private
+          - public
+
+jobs:
+  create-repo-and-connection:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    
+    steps:
+    # Checkout source repository
+    - name: Checkout source code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.source_branch }}
+        fetch-depth: 0
+        token: ${{ secrets.PAT_GITHUB }}
+
+    # Configure Git
+    - name: Configure Git
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+
+    # Create new repository using GitHub API
+    - name: Create new repository
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT_GITHUB }}
+        NEW_REPO_NAME: ${{ github.event.inputs.new_repo_name }}
+        REPO_VISIBILITY: ${{ github.event.inputs.repo_visibility }}
+      run: |
+        echo "============================================"
+        echo " Creating new repository: $NEW_REPO_NAME"
+        echo "============================================"
+        echo ""
+        
+        # Extract owner from current repo
+        OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+        
+        # Create repository
+        response=$(curl -s -w "\n%{http_code}" -X POST \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/user/repos \
+          -d "{
+            \"name\": \"$NEW_REPO_NAME\",
+            \"private\": $([ "$REPO_VISIBILITY" = "private" ] && echo "true" || echo "false"),
+            \"description\": \"Filtered repository containing: ${{ github.event.inputs.folders_to_keep }}\"
+          }")
+        
+        http_code=$(echo "$response" | tail -n1)
+        response_body=$(echo "$response" | sed '$d')
+        
+        if [ "$http_code" -eq 201 ]; then
+          echo "✓ Repository created successfully!"
+          NEW_REPO_URL=$(echo "$response_body" | grep -o '"html_url":"[^"]*' | cut -d'"' -f4)
+          echo "NEW_REPO_URL=${NEW_REPO_URL}" >> "$GITHUB_ENV"
+          echo "OWNER=${OWNER}" >> "$GITHUB_ENV"
+          echo "  Repository URL: $NEW_REPO_URL"
+        else
+          echo "✗ Failed to create repository. HTTP Code: $http_code"
+          echo "Response: $response_body"
+          exit 1
+        fi
+
+    # Create temporary directory for filtered content
+    - name: Prepare filtered content
+      run: |
+        echo ""
+        echo "============================================"
+        echo " Filtering Repository Content"
+        echo "============================================"
+        echo ""
+        echo "📁 Folders to KEEP: ${{ github.event.inputs.folders_to_keep }}"
+        echo ""
+        
+        # Create temporary directory for new repo
+        mkdir -p /tmp/new-repo
+        cd /tmp/new-repo
+        git init
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        
+        # Convert comma-separated list to array
+        IFS=',' read -ra FOLDERS <<< "${{ github.event.inputs.folders_to_keep }}"
+        
+        # Copy selected folders
+        echo "📋 Copying selected folders:"
+        copied_count=0
+        for folder in "${FOLDERS[@]}"; do
+          folder=$(echo "$folder" | xargs)
+          if [ -d "$GITHUB_WORKSPACE/$folder" ]; then
+            echo "   ✓ Copying $folder/"
+            cp -r "$GITHUB_WORKSPACE/$folder" .
+            copied_count=$((copied_count + 1))
+          else
+            echo "   ✗ $folder/ NOT FOUND - skipping"
+          fi
+        done
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "   • Folders copied: $copied_count"
+        echo ""
+        
+        {
+          echo "# Filtered Repository"
+          echo ""
+          echo "## Contents"
+          echo ""
+          echo "Included folders:"
+        } > README.md
+        
+        for folder in "${FOLDERS[@]}"; do
+          folder=$(echo "$folder" | xargs)
+          echo "- $folder/" >> README.md
+        done
+        
+        {
+          echo ""
+          echo "## Source Information"
+          echo ""
+          echo "- Source Repository: ${{ github.repository }}"
+          echo "- Source Branch: ${{ github.event.inputs.source_branch }}"
+          echo "- Created: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        } >> README.md
+        
+        echo "✓ Content prepared in /tmp/new-repo"
+
+    # Show folder structure
+    - name: Show new repository structure
+      run: |
+        cd /tmp/new-repo
+        echo ""
+        echo "📂 New repository structure:"
+        echo "============================================"
+        ls -la
+        echo ""
+
+    # Commit and push to new repository
+    - name: Push to new repository
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT_GITHUB }}
+      run: |
+        cd /tmp/new-repo
+        
+        echo "💾 Committing content..."
+        git add .
+        git commit -m "Initial commit: Filtered content from ${{ github.repository }}" || {
+          echo "✗ No files to commit"
+          exit 1
+        }
+        
+        echo "🚀 Pushing to new repository..."
+        NEW_REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${OWNER}/${{ github.event.inputs.new_repo_name }}.git"
+        git remote add origin "$NEW_REPO_URL"
+        git branch -M main
+        git push -u origin main
+        
+        echo "✓ Successfully pushed to new repository!"
+        echo ""
+
+    # Set up Python for Fabric connection
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install Dependencies
+      run: pip install requests
+    
+    # Create Fabric Connection for the new repository
+    - name: Create Fabric Connection
+      env:
+        TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        GITHUB_PAT: ${{ secrets.PAT_GITHUB }}
+        GITHUB_OWNER: ${{ vars.OWNER_GITHUB }}
+        REPO_NAME: ${{ github.event.inputs.new_repo_name }}
+      run: |
+        python - <<EOF
+        import os
+        import requests
+        import json
+        import sys
+        
+        TENANT_ID = os.environ['TENANT_ID']
+        CLIENT_ID = os.environ['CLIENT_ID']
+        CLIENT_SECRET = os.environ['CLIENT_SECRET']
+        GITHUB_PAT = os.environ['GITHUB_PAT']
+        GITHUB_OWNER = os.environ['GITHUB_OWNER']
+        REPO_NAME = os.environ['REPO_NAME']
+        
+        print("")
+        print("="*60)
+        print(" Creating Fabric Connection")
+        print("="*60)
+        
+        # Get Access Token
+        print("\n=== Requesting Azure AD Token ===")
+        token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+        token_data = {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "scope": "https://api.fabric.microsoft.com/.default",
+            "grant_type": "client_credentials"
+        }
+        
+        try:
+            token_response = requests.post(token_url, data=token_data)
+            token_response.raise_for_status()
+            access_token = token_response.json()["access_token"]
+            print("✓ Successfully obtained access token")
+        except requests.exceptions.HTTPError as e:
+            print(f"✗ Failed to get access token: {e}")
+            print(f"Response: {token_response.text}")
+            sys.exit(1)
+        except KeyError:
+            print(f"✗ Token response missing 'access_token': {token_response.text}")
+            sys.exit(1)
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        connection_name = f"GitHub-{GITHUB_OWNER}-{REPO_NAME}"
+        repo_url = f"https://github.com/{GITHUB_OWNER}/{REPO_NAME}"
+        
+        # Check for existing connections
+        print("\n=== Checking for Existing Connections ===")
+        list_url = "https://api.fabric.microsoft.com/v1/connections"
+        
+        try:
+            list_response = requests.get(list_url, headers=headers)
+            list_response.raise_for_status()
+            connections = list_response.json().get("value", [])
+            
+            # Look for existing connection with same name or URL
+            existing_connection = None
+            for conn in connections:
+                if conn.get("displayName") == connection_name:
+                    existing_connection = conn
+                    print(f"✓ Found existing connection by name: {connection_name}")
+                    break
+                # Also check by URL in connection details
+                conn_details = conn.get("connectionDetails", {})
+                params = conn_details.get("parameters", [])
+                for param in params:
+                    if param.get("name") == "url" and param.get("value") == repo_url:
+                        existing_connection = conn
+                        print(f"✓ Found existing connection by URL: {repo_url}")
+                        break
+                if existing_connection:
+                    break
+            
+            if existing_connection:
+                connection_id = existing_connection.get("id")
+                print(f"\n{'='*60}")
+                print(f"CONNECTION ALREADY EXISTS")
+                print(f"Connection ID: {connection_id}")
+                print(f"Connection Name: {existing_connection.get('displayName')}")
+                print(f"{'='*60}")
+                sys.exit(0)
+            else:
+                print("✓ No existing connection found, proceeding to create new one")
+                
+        except requests.exceptions.HTTPError as e:
+            print(f"⚠ Warning: Could not list connections: {e}")
+            print("Proceeding to create connection anyway...")
+        except Exception as e:
+            print(f"⚠ Warning: Error checking existing connections: {e}")
+            print("Proceeding to create connection anyway...")
+        
+        # Create GitHub Connection
+        print("\n=== Creating Fabric Connection ===")
+        connection_url = "https://api.fabric.microsoft.com/v1/connections"
+        connection_body = {
+            "connectivityType": "ShareableCloud",
+            "displayName": connection_name,
+            "connectionDetails": {
+                "type": "GitHubSourceControl",
+                "creationMethod": "GitHubSourceControl.Contents",
+                "parameters": [
+                    {
+                        "dataType": "Text",
+                        "name": "url",
+                        "value": repo_url
+                    }
+                ]
+            },
+            "credentialDetails": {
+                "credentials": {
+                    "credentialType": "Key",
+                    "key": GITHUB_PAT
+                }
+            }
+        }
+        
+        print(f"Request URL: {connection_url}")
+        print(f"Connection Name: {connection_name}")
+        print(f"Repository: {repo_url}")
+        
+        try:
+            response = requests.post(connection_url, headers=headers, json=connection_body)
+            
+            print(f"\nResponse Status: {response.status_code}")
+            print(f"Response Body: {response.text}")
+            
+            response.raise_for_status()
+            connection_data = response.json()
+            
+            if 'id' in connection_data:
+                print(f"\n✓ Connection created successfully!")
+                print(f"Connection ID: {connection_data['id']}")
+                print(f"\n{'='*60}")
+                print(f"SAVE THIS CONNECTION ID: {connection_data['id']}")
+                print(f"{'='*60}")
+            else:
+                print(f"\n✗ Connection response missing 'id' field")
+                print(f"Full response: {json.dumps(connection_data, indent=2)}")
+                sys.exit(1)
+                
+        except requests.exceptions.HTTPError as e:
+            print(f"\n✗ Failed to create connection: {e}")
+            print(f"Status Code: {response.status_code}")
+            print(f"Response: {response.text}")
+            sys.exit(1)
+        except json.JSONDecodeError:
+            print(f"\n✗ Failed to parse JSON response")
+            print(f"Raw response: {response.text}")
+            sys.exit(1)
+        
+        EOF

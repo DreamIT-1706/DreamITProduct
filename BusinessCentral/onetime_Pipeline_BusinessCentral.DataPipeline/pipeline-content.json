@@ -1,0 +1,92 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "4ce5c3c1-422b-975b-4e20-3caa19932d8d",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "input_config": {
+              "value": "{\n      \"sources\": {\n        \"Company\": {\n          \"watermark_column\": \"SystemModifiedAt\",\n          \"watermark_format\": \"%Y-%m-%dT%H:%M:%S.%fZ\",\n          \"key\": \"Id\",\n          \"active_flag\": true,\n\t        \"URL\":\"https://api.businesscentral.dynamics.com/v2.0/{Teanant_id}/{environment}/ODataV4\",\n\t        \"URLtype\":\"ODataV4\",\n\t        \"filter_query\":\"\"\n        }\n        ,\"CustomerTable\": {\n          \"watermark_column\": \"Last_Date_Modified\",\n          \"watermark_format\": \"%Y-%m-%d\",\n          \"key\": \"No\",\n          \"active_flag\": true,\n          \"URL\":\"https://api.businesscentral.dynamics.com/v2.0/{Teanant_id}/{environment}/ODataV4\",\n          \"URLtype\":\"ODataV4\",\n          \"filter_query\":\"&$select=No,Name,Name_2,Responsibility_Center\"\n        }\n        ,\"ItemListOData\": {\n          \"watermark_column\": \"Last_Date_Modified\",\n          \"watermark_format\": \"%Y-%m-%d\",\n          \"key\": \"No\",\n          \"active_flag\": true,\n          \"URL\":\"https://api.businesscentral.dynamics.com/v2.0/{Teanant_id}/{environment}/ODataV4\",\n          \"URLtype\":\"ODataV4\",\n          \"filter_query\":\"\"\n        }\n    }\n}",
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook1",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "afe8b2e7-71c5-a071-4de7-9ab1a20d1991",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "TENANT_ID": {
+              "value": "48abe532",
+              "type": "string"
+            },
+            "CLIENT_ID": {
+              "value": "5efde4d2-",
+              "type": "string"
+            },
+            "CLIENT_SECRET": {
+              "value": "_S88Q~vH6",
+              "type": "string"
+            },
+            "ENVIRONMENT": {
+              "value": "PRODuction",
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook2",
+        "dependsOn": [
+          {
+            "activity": "Notebook1",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "9c50a888-3425-a308-43fa-77c2f9f55615",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook3",
+        "dependsOn": [
+          {
+            "activity": "Notebook2",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
