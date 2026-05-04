@@ -147,7 +147,31 @@ def add_workspace_admins(admin_users_string, workspace_id):
 # NOTEBOOK DEPLOYMENT
 # ============================================================================
 
+# def read_notebook_content(notebook_folder_path):
+#     content_file = os.path.join(notebook_folder_path, "notebook-content.py")
+#     platform_file = os.path.join(notebook_folder_path, ".platform")
+
+#     if not os.path.exists(content_file):
+#         print(f"   ⚠️  notebook-content.py not found in {notebook_folder_path}")
+#         return None, None
+
+#     with open(content_file, 'r', encoding='utf-8') as f:
+#         content = f.read()
+
+#     display_name = os.path.basename(notebook_folder_path).replace(".Notebook", "")
+#     if os.path.exists(platform_file):
+#         try:
+#             with open(platform_file, 'r') as f:
+#                 platform_data = json.load(f)
+#             display_name = platform_data.get("metadata", {}).get("displayName", display_name)
+#         except:
+#             pass
+
+#     encoded = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+#     return display_name, encoded
+
 def read_notebook_content(notebook_folder_path):
+    import re
     content_file = os.path.join(notebook_folder_path, "notebook-content.py")
     platform_file = os.path.join(notebook_folder_path, ".platform")
 
@@ -156,8 +180,69 @@ def read_notebook_content(notebook_folder_path):
         return None, None
 
     with open(content_file, 'r', encoding='utf-8') as f:
-        content = f.read()
+        raw = f.read()
 
+    # Parse # CELL ** blocks into individual cells
+    cells = []
+    current_lines = []
+    in_cell = False
+
+    for line in raw.splitlines():
+        if re.match(r'^# CELL \*+\s*$', line):
+            if in_cell and current_lines:
+                code = '\n'.join(current_lines).strip()
+                if code:
+                    cells.append(code)
+            current_lines = []
+            in_cell = True
+        elif re.match(r'^# METADATA \*+\s*$', line):
+            if in_cell and current_lines:
+                code = '\n'.join(current_lines).strip()
+                if code:
+                    cells.append(code)
+            current_lines = []
+            in_cell = False
+        elif in_cell:
+            current_lines.append(line)
+
+    # Don't forget last cell
+    if in_cell and current_lines:
+        code = '\n'.join(current_lines).strip()
+        if code:
+            cells.append(code)
+
+    # Fallback: treat whole file as one cell
+    if not cells:
+        cells = [raw]
+
+    # Build proper ipynb JSON
+    notebook_cells = []
+    for idx, src in enumerate(cells):
+        notebook_cells.append({
+            "cell_type": "code",
+            "id": str(idx + 1),
+            "metadata": {},
+            "execution_count": None,
+            "outputs": [],
+            "source": src.splitlines(keepends=True)
+        })
+
+    ipynb = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "language_info": {"name": "python"},
+            "kernelspec": {
+                "display_name": "Synapse PySpark",
+                "language": "Python",
+                "name": "synapse_pyspark"
+            },
+            "trident": {"lakehouse": {}}
+        },
+        "cells": notebook_cells
+    }
+
+    # Get display name from .platform or folder name
     display_name = os.path.basename(notebook_folder_path).replace(".Notebook", "")
     if os.path.exists(platform_file):
         try:
@@ -167,7 +252,9 @@ def read_notebook_content(notebook_folder_path):
         except:
             pass
 
-    encoded = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+    # Base64 encode the ipynb JSON
+    ipynb_json = json.dumps(ipynb, ensure_ascii=False)
+    encoded = base64.b64encode(ipynb_json.encode('utf-8')).decode('utf-8')
     return display_name, encoded
 
 def deploy_notebook(token, workspace_id, display_name, encoded_content):
@@ -182,7 +269,7 @@ def deploy_notebook(token, workspace_id, display_name, encoded_content):
             "format": "ipynb",
             "parts": [
                 {
-                    "path": "notebook-content.py",
+                    "path": "artifact.content.ipynb",
                     "payload": encoded_content,
                     "payloadType": "InlineBase64"
                 }
