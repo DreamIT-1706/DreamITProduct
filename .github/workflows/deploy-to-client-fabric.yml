@@ -1,0 +1,65 @@
+name: Deploy Modules to Client Fabric Workspace
+
+on:
+  workflow_dispatch:
+    inputs:
+      TARGET_TENANT_ID:
+        description: 'Client Tenant ID (Azure AD)'
+        required: true
+        type: string
+      WORKSPACE_ID:
+        description: 'Client Fabric Workspace ID (existing)'
+        required: false
+        type: string
+      CAPACITY_ID:
+        description: 'Client Fabric Capacity ID (for new workspace)'
+        required: false
+        type: string
+      WORKSPACE_NAME:
+        description: 'New Workspace Name (only if WORKSPACE_ID not provided)'
+        required: false
+        type: string
+      MODULES:
+        description: 'Comma-separated modules to deploy (e.g. BusinessCentral,Shopify)'
+        required: true
+        default: 'BusinessCentral'
+        type: string
+      ADMIN_USERS:
+        description: 'Comma-separated admin emails in client tenant'
+        required: false
+        type: string
+
+env:
+  FABRIC_API_BASE: https://api.fabric.microsoft.com/v1
+
+jobs:
+  deploy-to-client:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Deploy Modules to Client Fabric Workspace
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          TARGET_TENANT_ID: ${{ inputs.TARGET_TENANT_ID }}
+          WORKSPACE_ID: ${{ inputs.WORKSPACE_ID }}
+          CAPACITY_ID: ${{ inputs.CAPACITY_ID }}
+          WORKSPACE_NAME: ${{ inputs.WORKSPACE_NAME }}
+          MODULES: ${{ inputs.MODULES }}
+          ADMIN_USERS: ${{ inputs.ADMIN_USERS }}
+        run: |
+          python .github/scripts/deploy_to_fabric.py
